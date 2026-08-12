@@ -2,9 +2,9 @@
 
 #jjk-hud {
     position: fixed;
-    bottom: 18px;
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
     right: 18px;
-    z-index: 9000;
+    z-index: 999999;
     font-family: 'Inter', system-ui, sans-serif;
     font-size: 12px;
     user-select: none;
@@ -188,4 +188,42 @@
 }
 .jjk-settings-row label {
     font-size: 12px;
+}
+
+/* Limited-mode warning */
+#jjk-hud-warn-dot {
+    font-size: 12px;
+    color: #f6ad55;
+    flex-shrink: 0;
+    cursor: help;
+}
+#jjk-context-warning {
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: #f6ad55;
+    background: rgba(246, 173, 85, 0.1);
+    border: 1px solid rgba(246, 173, 85, 0.3);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+}
+
+/* On-screen debug log */
+#jjk-debug-log {
+    display: none;
+    margin-top: 8px;
+    max-height: 160px;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 6px;
+    padding: 8px;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 9px;
+    line-height: 1.5;
+    color: #a89cc8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    -webkit-user-select: text;
+    user-select: text;
 }

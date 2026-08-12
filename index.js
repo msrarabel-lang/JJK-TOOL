@@ -4,14 +4,13 @@
 //   2. Domain Expansion cooldown — counts real message turns and warns the AI
 //      via prompt injection while on cooldown.
 //
-// NOTE FOR THE USER: this was written against SillyTavern's stable global
-// extension API (window.SillyTavern.getContext()) — the version-independent
-// entry point ST recommends specifically so extensions don't break on
-// relative-path imports across versions. It could not be tested against a
-// live SillyTavern instance while building it. Every ST API call below is
-// wrapped in try/catch with a console.log/console.warn so that if something
-// doesn't match your ST version, the HUD still loads and you can see exactly
-// what failed in the browser console (F12) to report back.
+// v1.1 — hardened after a real-world install report where the HUD never
+// appeared. This version:
+//   - Tries several ways to find SillyTavern's context API, not just one.
+//   - ALWAYS builds the floating HUD, even if no context API is found at all
+//     (falls back to in-memory-only settings so the pill is never invisible).
+//   - Keeps an on-screen debug log (tap "🐞 Debug Log" in the HUD panel) so
+//     you can read diagnostics on a PHONE without needing browser devtools.
 
 (function () {
     const extensionName = 'jjk-cursed-tracker';
@@ -28,23 +27,52 @@
         hudPos: null,               // {left, top} once user drags it, else default bottom-right
     };
 
+    // ── On-screen debug log (readable on mobile, no devtools needed) ──────
+    const debugLines = [];
+    function dlog(level, ...args) {
+        const msg = args.map((a) => {
+            try { return typeof a === 'string' ? a : JSON.stringify(a); }
+            catch (e) { return String(a); }
+        }).join(' ');
+        const line = `[${level}] ${msg}`;
+        debugLines.push(line);
+        if (debugLines.length > 60) debugLines.shift();
+        if (level === 'error') console.error('[jjk-cursed-tracker]', ...args);
+        else if (level === 'warn') console.warn('[jjk-cursed-tracker]', ...args);
+        else console.log('[jjk-cursed-tracker]', ...args);
+        refreshDebugPanel();
+    }
+    function refreshDebugPanel() {
+        const el = document.getElementById('jjk-debug-log');
+        if (el) el.textContent = debugLines.join('\n');
+    }
+
+    // ── Find SillyTavern's context API — try several known access paths ───
     function ctx() {
-        try {
-            if (window.SillyTavern && typeof window.SillyTavern.getContext === 'function') {
-                return window.SillyTavern.getContext();
+        const attempts = [
+            () => window.SillyTavern && window.SillyTavern.getContext && window.SillyTavern.getContext(),
+            () => window.parent && window.parent.SillyTavern && window.parent.SillyTavern.getContext && window.parent.SillyTavern.getContext(),
+            () => typeof window.getContext === 'function' && window.getContext(),
+            () => window.top && window.top.SillyTavern && window.top.SillyTavern.getContext && window.top.SillyTavern.getContext(),
+        ];
+        for (const attempt of attempts) {
+            try {
+                const result = attempt();
+                if (result) return result;
+            } catch (e) {
+                // try next
             }
-        } catch (e) {
-            console.warn('[jjk-cursed-tracker] SillyTavern.getContext() threw:', e);
         }
         return null;
     }
+
+    let contextFound = false;
 
     function getSettings() {
         const c = ctx();
         const store = c && c.extensionSettings ? c.extensionSettings : null;
         if (!store) {
             if (!window.__jjkFallbackSettings) {
-                console.warn('[jjk-cursed-tracker] context.extensionSettings not found — using in-memory fallback (will NOT persist across reloads). Check the console for a getContext() error above.');
                 window.__jjkFallbackSettings = structuredClone(defaultSettings);
             }
             return window.__jjkFallbackSettings;
@@ -65,11 +93,9 @@
         try {
             if (c && typeof c.saveSettingsDebounced === 'function') {
                 c.saveSettingsDebounced();
-            } else {
-                console.warn('[jjk-cursed-tracker] context.saveSettingsDebounced not found — settings may not persist across reloads.');
             }
         } catch (e) {
-            console.warn('[jjk-cursed-tracker] persist() failed:', e);
+            dlog('warn', 'persist() failed:', e && e.message);
         }
     }
 
@@ -87,9 +113,7 @@
     function updateExtensionPrompt() {
         const s = getSettings();
         const c = ctx();
-        if (!c || typeof c.setExtensionPrompt !== 'function') {
-            return; // silently skip — HUD still works without this
-        }
+        if (!c || typeof c.setExtensionPrompt !== 'function') return;
         try {
             if (!s.enabled) {
                 c.setExtensionPrompt(EXT_PROMPT_KEY, '', 1, 0, false);
@@ -100,10 +124,9 @@
             if (remaining > 0) {
                 note = `[SYSTEM NOTE: {{char}}'s Domain Expansion is on cooldown — ${remaining} more message(s) before it can be used again. Do not have {{char}} use Domain Expansion until the cooldown ends.]`;
             }
-            // position 1 = in-chat depth-based injection in most ST versions; depth 0 = right before the next generation.
             c.setExtensionPrompt(EXT_PROMPT_KEY, note, 1, 0, false);
         } catch (e) {
-            console.warn('[jjk-cursed-tracker] setExtensionPrompt failed — cooldown will still show in the HUD but will not be auto-reminded to the AI:', e);
+            dlog('warn', 'setExtensionPrompt failed:', e && e.message);
         }
     }
 
@@ -123,14 +146,14 @@
                 if (keyword && text.includes(keyword)) {
                     if (domainIsReady(s)) {
                         s.domainLastUsedTurn = s.turnCount;
-                        console.log('[jjk-cursed-tracker] Domain Expansion detected — cooldown started.');
+                        dlog('log', 'Domain Expansion detected — cooldown started.');
                     } else {
-                        console.warn('[jjk-cursed-tracker] Domain Expansion keyword appeared while still on cooldown (the AI may have ignored the reminder).');
+                        dlog('warn', 'Domain Expansion keyword appeared while still on cooldown.');
                     }
                 }
             }
         } catch (e) {
-            console.warn('[jjk-cursed-tracker] message scan failed:', e);
+            dlog('warn', 'message scan failed:', e && e.message);
         }
 
         persist();
@@ -147,6 +170,7 @@
         hud.innerHTML = `
             <div id="jjk-hud-panel">
                 <div class="jjk-panel-title">Cursed Energy <span class="jjk-panel-close" id="jjk-panel-close">&times;</span></div>
+                <div id="jjk-context-warning" style="display:none"></div>
                 <div class="jjk-panel-row">
                     <div class="jjk-panel-lbl"><span>Reserve</span><span id="jjk-ce-numbers">— / —</span></div>
                     <div class="jjk-btn-row">
@@ -185,6 +209,10 @@
                         <input type="text" class="jjk-input" id="jjk-keyword-input" style="width:100%;text-align:left" placeholder="domain expansion">
                     </div>
                 </div>
+                <div class="jjk-panel-row">
+                    <div class="jjk-btn wide" id="jjk-debug-toggle">🐞 Debug Log</div>
+                    <pre id="jjk-debug-log" style="display:none"></pre>
+                </div>
             </div>
             <div id="jjk-hud-pill">
                 <span id="jjk-hud-glyph">呪</span>
@@ -193,6 +221,7 @@
                     <span id="jjk-hud-ce-val">— / —</span>
                 </div>
                 <span id="jjk-hud-domain-badge" class="ready">Domain: —</span>
+                <span id="jjk-hud-warn-dot" style="display:none" title="Limited mode — tap for details">⚠</span>
             </div>
         `;
         document.body.appendChild(hud);
@@ -203,6 +232,11 @@
         });
         document.getElementById('jjk-panel-close').addEventListener('click', () => {
             document.getElementById('jjk-hud-panel').classList.remove('open');
+        });
+        document.getElementById('jjk-debug-toggle').addEventListener('click', () => {
+            const el = document.getElementById('jjk-debug-log');
+            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+            refreshDebugPanel();
         });
 
         hud.querySelectorAll('[data-ce]').forEach((btn) => {
@@ -268,33 +302,48 @@
         let dragging = false;
         let startX, startY, startLeft, startTop;
 
-        handle.addEventListener('mousedown', (e) => {
+        function down(clientX, clientY) {
             dragging = true;
             container.classList.remove('was-dragged');
             handle.classList.add('dragging');
             const rect = container.getBoundingClientRect();
-            startX = e.clientX; startY = e.clientY;
+            startX = clientX; startY = clientY;
             startLeft = rect.left; startTop = rect.top;
-            e.preventDefault();
-        });
-        window.addEventListener('mousemove', (e) => {
+        }
+        function move(clientX, clientY) {
             if (!dragging) return;
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
+            const dx = clientX - startX;
+            const dy = clientY - startY;
             if (Math.abs(dx) > 4 || Math.abs(dy) > 4) container.classList.add('was-dragged');
             container.style.left = (startLeft + dx) + 'px';
             container.style.top = (startTop + dy) + 'px';
             container.style.right = 'auto';
             container.style.bottom = 'auto';
-        });
-        window.addEventListener('mouseup', () => {
+        }
+        function up() {
             if (!dragging) return;
             dragging = false;
             handle.classList.remove('dragging');
             const s = getSettings();
             s.hudPos = { left: container.style.left, top: container.style.top };
             persist();
-        });
+        }
+
+        handle.addEventListener('mousedown', (e) => { down(e.clientX, e.clientY); e.preventDefault(); });
+        window.addEventListener('mousemove', (e) => move(e.clientX, e.clientY));
+        window.addEventListener('mouseup', up);
+
+        // Touch support for mobile
+        handle.addEventListener('touchstart', (e) => {
+            const t = e.touches[0];
+            down(t.clientX, t.clientY);
+        }, { passive: true });
+        window.addEventListener('touchmove', (e) => {
+            if (!dragging) return;
+            const t = e.touches[0];
+            move(t.clientX, t.clientY);
+        }, { passive: true });
+        window.addEventListener('touchend', up);
     }
 
     function renderHud() {
@@ -332,13 +381,26 @@
             badge.className = 'cooldown';
             statusEl.textContent = `${remaining} turn(s) left`;
         }
+
+        const warnDot = document.getElementById('jjk-hud-warn-dot');
+        const warnBox = document.getElementById('jjk-context-warning');
+        if (!contextFound) {
+            warnDot.style.display = 'inline';
+            warnBox.style.display = 'block';
+            warnBox.innerHTML = '⚠ Running in limited mode: could not find SillyTavern\'s extension API. Cursed Energy still works but will NOT be saved after you reload the page, and the Domain cooldown will not auto-advance or warn the AI. Tap "🐞 Debug Log" below and send a screenshot to get this fixed.';
+        } else {
+            warnDot.style.display = 'none';
+            warnBox.style.display = 'none';
+        }
+
+        refreshDebugPanel();
     }
 
     // ── Extensions-panel settings drawer (best-effort — HUD works without it) ─
     function buildSettingsPanel() {
         const container = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
         if (!container) {
-            console.warn('[jjk-cursed-tracker] Extensions settings container not found — HUD still works, it just will not show a drawer in the Extensions panel. Use the floating pill instead.');
+            dlog('warn', 'Extensions settings container not found — using floating pill only.');
             return;
         }
         if (document.getElementById('jjk-settings-drawer')) return;
@@ -376,32 +438,61 @@
     // ── Init ─────────────────────────────────────────────────────────────
     function init() {
         const c = ctx();
-        if (!c) {
-            console.error('[jjk-cursed-tracker] window.SillyTavern.getContext() is not available. This extension needs a reasonably recent SillyTavern version. The HUD will not load. Open the browser console for details.');
-            return;
+        contextFound = !!c;
+        if (!contextFound) {
+            dlog('error', 'No SillyTavern context API found via any known access path. Building the HUD anyway in limited (non-persistent) mode.');
+        } else {
+            dlog('log', 'context found. keys:', c ? Object.keys(c).slice(0, 20).join(',') : 'none');
         }
+
         buildHud();
-        buildSettingsPanel();
+        if (contextFound) buildSettingsPanel();
         renderHud();
         updateExtensionPrompt();
 
         try {
-            if (c.eventSource && c.event_types && c.event_types.MESSAGE_RECEIVED) {
+            if (c && c.eventSource && c.event_types && c.event_types.MESSAGE_RECEIVED) {
                 c.eventSource.on(c.event_types.MESSAGE_RECEIVED, onMessageReceived);
-                console.log('[jjk-cursed-tracker] hooked MESSAGE_RECEIVED — Domain cooldown will auto-advance.');
+                dlog('log', 'hooked MESSAGE_RECEIVED — Domain cooldown will auto-advance.');
             } else {
-                console.warn('[jjk-cursed-tracker] context.eventSource/event_types not found — Domain cooldown will NOT auto-advance on new messages. Use "Mark Used Now" / "Force Ready" manually in the HUD panel.');
+                dlog('warn', 'eventSource/event_types not found — Domain cooldown will not auto-advance. Use manual buttons.');
             }
         } catch (e) {
-            console.warn('[jjk-cursed-tracker] event hook failed:', e);
+            dlog('warn', 'event hook failed:', e && e.message);
         }
 
-        console.log('[jjk-cursed-tracker] initialized.');
+        dlog('log', 'initialized. contextFound=' + contextFound);
+    }
+
+    function boot() {
+        try {
+            init();
+        } catch (e) {
+            // Absolute last resort: something threw during init itself.
+            // Still try to show a bare-bones HUD so the user sees *something*.
+            console.error('[jjk-cursed-tracker] init() threw:', e);
+            try {
+                if (!document.getElementById('jjk-hud')) {
+                    buildHud();
+                    renderHud();
+                }
+            } catch (e2) {
+                console.error('[jjk-cursed-tracker] even the fallback HUD build failed:', e2);
+            }
+        }
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', boot);
     } else {
-        init();
+        boot();
     }
+    // Extensions can sometimes load before SillyTavern's own app is fully
+    // ready; retry once after a short delay in case ctx() was null too early.
+    setTimeout(() => {
+        if (!contextFound) {
+            dlog('log', 'retrying context detection after delay...');
+            boot();
+        }
+    }, 2500);
 })();
