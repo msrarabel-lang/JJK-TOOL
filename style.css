@@ -1,0 +1,191 @@
+/* JJK Cursed Energy & Domain Tracker — floating HUD */
+
+#jjk-hud {
+    position: fixed;
+    bottom: 18px;
+    right: 18px;
+    z-index: 9000;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 12px;
+    user-select: none;
+}
+
+#jjk-hud-pill {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    background: linear-gradient(160deg, #17101f 0%, #0a0611 100%);
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    border-radius: 999px;
+    padding: 7px 14px 7px 10px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55), 0 0 18px -6px rgba(139, 92, 246, 0.4);
+    cursor: grab;
+    transition: box-shadow 0.2s;
+}
+#jjk-hud-pill:hover {
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55), 0 0 24px -4px rgba(139, 92, 246, 0.6);
+}
+#jjk-hud-pill.dragging {
+    cursor: grabbing;
+}
+
+#jjk-hud-glyph {
+    font-family: 'Noto Serif JP', serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: #b794f6;
+    text-shadow: 0 0 8px rgba(183, 148, 246, 0.6);
+    flex-shrink: 0;
+}
+
+#jjk-hud-ce-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 74px;
+}
+#jjk-hud-ce-track {
+    width: 100%;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+#jjk-hud-ce-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #6b3fa0, #b794f6);
+    box-shadow: 0 0 6px rgba(183, 148, 246, 0.5);
+    transition: width 0.3s;
+}
+#jjk-hud-ce-val {
+    font-size: 9.5px;
+    color: #c9b8e8;
+    letter-spacing: 0.3px;
+}
+
+#jjk-hud-domain-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+#jjk-hud-domain-badge.ready {
+    color: #6ee7b7;
+    background: rgba(110, 231, 183, 0.12);
+    border: 1px solid rgba(110, 231, 183, 0.35);
+}
+#jjk-hud-domain-badge.cooldown {
+    color: #f6ad55;
+    background: rgba(246, 173, 85, 0.12);
+    border: 1px solid rgba(246, 173, 85, 0.35);
+}
+
+/* Expanded panel */
+#jjk-hud-panel {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 10px);
+    right: 0;
+    width: 260px;
+    background: linear-gradient(160deg, #17101f 0%, #0a0611 100%);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+#jjk-hud-panel.open {
+    display: block;
+}
+.jjk-panel-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #b794f6;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.jjk-panel-close {
+    cursor: pointer;
+    color: #7a6e8f;
+    font-size: 14px;
+    line-height: 1;
+}
+.jjk-panel-close:hover {
+    color: #e4d9f5;
+}
+.jjk-panel-row {
+    margin-bottom: 12px;
+}
+.jjk-panel-lbl {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10.5px;
+    color: #c9b8e8;
+    margin-bottom: 5px;
+}
+.jjk-btn-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+.jjk-btn {
+    flex: 1;
+    padding: 5px 0;
+    border-radius: 6px;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    background: rgba(139, 92, 246, 0.1);
+    color: #e4d9f5;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s;
+}
+.jjk-btn:hover {
+    background: rgba(139, 92, 246, 0.25);
+}
+.jjk-btn.wide {
+    flex: none;
+    width: 100%;
+}
+.jjk-input {
+    width: 56px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    border-radius: 6px;
+    color: #e4d9f5;
+    font-size: 11px;
+    padding: 4px 6px;
+    text-align: center;
+}
+.jjk-panel-note {
+    font-size: 9.5px;
+    color: #7a6e8f;
+    line-height: 1.5;
+    margin-top: 6px;
+}
+
+/* Settings drawer (Extensions panel) */
+.jjk-settings-block .inline-drawer-content {
+    padding: 8px 4px;
+}
+.jjk-settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    gap: 10px;
+}
+.jjk-settings-row label {
+    font-size: 12px;
+}
